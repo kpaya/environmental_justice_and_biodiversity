@@ -1,0 +1,311 @@
+---
+title: "Homework Assignment #2"
+subtitle: "Exploring patterns of environmental justice"
+author: "Karol Paya (collaborated with Sanjay Poudel)"
+date: October 13, 2024
+execute: 
+  eval: True
+  warning: False
+  message: False
+format:
+  html:
+    toc: true
+editor_options: 
+  chunk_output_type: console
+---
+
+## Load Libraries
+
+<details>
+
+<summary>Click to view code</summary>
+
+```{r}
+# Loading libraries
+library(sf)
+library(tmap)
+library(here)
+library(tidyverse)
+library(dplyr)
+library(gt)
+```
+
+</details>
+
+## Load Data
+
+<details>
+
+<summary>Click to view code</summary>
+
+```{r}
+# Loading data
+ejscreen <- sf::read_sf(here::here("data", "ejscreen",
+                                   "EJSCREEN_2023_BG_StatePct_with_AS_CNMI_GU_VI.gdb"))
+
+holc <- sf::st_read(here::here("data", "mapping-inequality", 
+                                 "mapping-inequality-los-angeles.json"))
+
+birds <- sf::st_read(here::here("data","gbif-birds-LA","gbif-birds-LA.shp"))
+```
+
+</details>
+
+**Data source:**
+
+**EJScreen\
+**United States Environmental Protection Agency’s EJScreen: Environmental Justice Screening and Mapping Tool
+
+**HOLC Redlining\
+**The University of Richmond - [Digital Scholarship Lab](https://dsl.richmond.edu/)
+
+**Biodiversity observations\
+**The [Global Biodiversity Information Facility](https://eds-223-geospatial.github.io/assignments/gbif.org)
+
+Data Retrieved: Oct. 13, 2024
+
+## Checking Coordinate System Match
+
+<details>
+
+<summary>Click to view code</summary>
+
+```{r}
+# Checking holc map and ejscreen have the same coordinate systems
+if(st_crs(holc) == st_crs(ejscreen)){
+  print("it's a match")
+} else {
+  print("still not a match")
+}
+
+# Adjusting coordinate system for holc-dataset
+holc_rpr <- st_transform(holc, st_crs(ejscreen))
+```
+
+```{r}
+# Checking if birds & ejscreen coordinate systems are the same
+if(st_crs(birds) == st_crs(ejscreen)){
+  print("it's a match")
+} else {
+  print("still not a match")
+}
+
+# Adjusting coordinate system for birds-dataset
+birds_rpr <- st_transform(birds, st_crs(ejscreen))
+```
+
+</details>
+
+## Part 1: Legacy of redlining in current environmental (in)justice
+
+a)  Map of historical redlining neighborhoods, including: -neighborhoods colored by HOLC grade -an appropriate base map
+
+```{r}
+# tmap mode set to interactive viewing
+tmap_mode("view") 
+tmap_options(check.and.fix = TRUE)
+
+# Creating a map of LA county showing the HOLC Grades
+tm_shape(holc_rpr) +
+  tm_polygons("grade", 
+               palette = c("A" = "chartreuse3", 
+                           "B" = "blue", 
+                           "C" = "yellow", 
+                           "D" = "red"),
+               title = "HOLC Grade") +
+  tm_layout(title = "Map of Los Angeles County by Grade")
+```
+
+
+b)  a table summarizing the percent of current census block groups within each HOLC grade (or none)
+
+```{r}
+# Filtering LA County
+LA_ejscreen <- ejscreen  %>%
+  filter(CNTY_NAME == "Los Angeles County") %>%
+  select(ID, LOWINCPCT, P_PM25, P_LIFEEXPPCT)%>%
+  mutate(Block_Group_Code = substr(ID, nchar(ID), nchar(ID)))
+
+# Spatial joint of LA_ejscreen & HOLC dataset
+LA_holc <- st_intersection(LA_ejscreen, holc_rpr)
+
+# Summary table of the % census block per HOLC grade
+block_holc<- LA_holc %>%
+  group_by(grade,Block_Group_Code) %>%
+  summarize(count = n()) %>%
+  mutate(percent = count / sum(count) * 100)
+
+# Creating new dataframe without shape attributes
+censusblock_grade_table <- data.frame(
+  Grade = block_holc$grade,
+  Block_group = block_holc$Block_Group_Code,
+  Percent = block_holc$percent
+)
+
+# Using library gt to create a table to better present the results
+
+gt_table <- censusblock_grade_table %>%
+  gt() %>%
+  tab_header(
+    title = "Census Block Group Percentages by HOLC Grade"
+  ) %>%
+  cols_label(
+    Grade = "HOLC Grade",
+    Block_group = "Census Block Group",
+    Percent = "Percent (%)"
+  ) %>%
+  fmt_number(
+    columns = c(Percent),
+    decimals = 2
+)
+
+# Display the gt table
+gt_table
+```
+
+c)  A set of figures summarizing current conditions (from the EJScreen data) within HOLC grades using the mean of the following variables:
+
+-% low income
+
+-percentile for Particulate Matter 2.5
+
+-percentile for low life expectancy
+
+```{r}
+# Creating summary table of the calculated averages of diff conditions
+block_holc_conditions<- LA_holc %>%
+  group_by(grade)%>%
+  summarize(
+    mean_lowincome_percent = mean(LOWINCPCT, na.rm = TRUE),
+    mean_PM25_pct = mean(P_PM25, na.rm = TRUE),
+    mean_lifeexpectancy_pct = mean(P_LIFEEXPPCT, na.rm = TRUE)
+  )
+
+# Converting block_holc_conditions to a long format
+block_holc_conditions_long<- block_holc_conditions %>%
+  pivot_longer(cols = starts_with("mean"), 
+               names_to = "conditions", 
+               values_to = "averages"
+)
+
+# Creating new dataframe without shape attributes
+block_hold_table <- data.frame(
+  Grade = block_holc_conditions_long$grade,
+  Conditions = block_holc_conditions_long$conditions,
+  Averages = block_holc_conditions_long$averages
+)
+
+# Using library gt to create a table to better present the results
+gt_table2 <- block_hold_table %>%
+  gt() %>%
+  tab_header(
+    title = "HOLC Grade Conditions Summary"
+  ) %>%
+  cols_label(
+    Grade = "HOLC Grade",
+    Conditions = "Conditions",
+    Averages = "Average"
+  ) %>%
+  fmt_number(
+    columns = c(Averages),
+    decimals = 2
+)
+
+# Display the gt table
+gt_table2
+```
+
+```{r}
+# Creating bar plot of condition averages across different grades
+ggplot(block_holc_conditions_long, 
+       aes(x = conditions, 
+           y = averages, 
+           fill = grade)) +
+  geom_bar(stat = "identity", 
+           position = "dodge") +
+  labs(title="Condition Averages by HOLC Grades",
+       x = "Condition", 
+       y = "Averages", fill = "HOLC Grade") +
+  scale_x_discrete(labels = c("Low Income %",
+                              "Life Expectancy \nPercentiles (Years)",
+                              "Particulate Matter 2.5 \n Percentiles (µg/m³)")) +
+  scale_fill_manual(values = c("A" = "chartreuse3", 
+                                "B" = "blue", 
+                                "C" = "yellow", 
+                                "D" = "red"))+
+  theme_minimal()
+```
+
+d)  a brief paragraph reflecting on these results
+
+When comparing the mean condition percentiles across each grade, no clear and logical relationship was identified between life expectancy and PM2.5 levels. The data hows that higher PM2.5 concentrations correlated with increased life expectancy across the different grades.
+
+When examining the low-income percentiles and their corresponding grades, the results indicate a consistent trend: Grade A has the lowest average population living in low income, with this figure increasing as we move through the other HOLC grading systems.
+
+## Part 2: Legacy of redlining in biodiversity observations
+
+a)  A figure summarizing the percent of observations within redlined neighborhoods within each HOLC grade
+
+```{r}
+# Checking which spatial join to use for  birds & HOLC dataset dataset
+# Computing st_intersection and checking number of rows
+bird_holc <- st_intersection(holc_rpr, birds_rpr)
+print(paste("Number of Rows for st_intersection:", nrow(bird_holc)))
+
+# Computing st_join and checking number of rows
+bird_holc2<- st_join(holc_rpr, birds_rpr,join=st_intersects)
+print(paste("Number of Rows for st_join:", nrow(bird_holc2)))
+```
+
+Will proceed with st_intersection, st_join contains more rows - it includes blank rows when datasets are not overlapped
+
+```{r}
+# Summary table of the percent bird observation per HOLC grade
+bird_obs<- bird_holc %>%
+  group_by(grade) %>%
+  summarize(count = n()) %>%
+  mutate(percent_observations = count / sum(count) * 100)
+
+# Creating new dataframe without shape attributes
+bird_table <- data.frame(
+  Grade = bird_obs$grade,
+  Count = bird_obs$count,
+  percent_observation = bird_obs$percent_observations
+)
+
+# Creating gt table for bird observation percentages
+bird_table%>%
+  gt() %>%
+  tab_header(
+    title = "HOLC Grade Conditions Summary"
+  ) %>%
+  cols_label(
+    Grade = "HOLC Grade",
+    Count = "Bird Observation Count",
+    percent_observation = "Percent Observation (%)"
+  ) %>%
+  fmt_number(
+    columns = c(percent_observation),
+    decimals = 2
+)
+
+# Bar graph showing the percentages of bird observation per HOLC grade
+ggplot(bird_obs, aes(x = grade, y = percent_observations, fill = grade)) +
+  geom_bar(stat = "identity",show.legend = FALSE) +
+  labs(title = "Bird Observations Percentage by HOLC Grade",
+       x = "HOLC Grade",
+       y = "Percent (%)") +
+  scale_fill_manual(values = c("A" = "chartreuse3", 
+                           "B" = "blue", 
+                           "C" = "yellow", 
+                           "D" = "red")) +
+  theme_minimal()
+```
+
+b)  a brief paragraph explaining whether these results match the findings from Ellis-Soto et al. 2023
+
+*"A recent study found that redlining has not only affected the environments communities are exposed to, it has also shaped our observations of biodiversity.4 Community or citizen science, whereby individuals share observations of species, is generating an enormous volume of data. Ellis-Soto and co-authors found that redlined neighborhoods remain the most undersampled areas across 195 US cities. This gap is highly concerning, because conservation decisions are made based on these data."*
+
+The results from the analysis above do not align with the findings of Ellis-Soto et al. (2023). While Ellis-Soto et al. highlighted that redlined neighborhoods, particularly those designated as lower grades by the Home Owners' Loan Corporation (HOLC), are undersampled in terms of biodiversity data, the results indicate that grade C neighborhoods had the most bird observations. This suggests a potential bias in the data collection or perhaps there was an ecological factor influencing the results.
+
+There is a lack of evidence to conclude a relationship between bird observations and HOLC grades, further investigation is required, including more historical data of the biodiversity in redlined areas to support Ellis-Soto claim.
