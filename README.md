@@ -23,7 +23,7 @@ EJScreen is a tool provided by the U.S. Environmental Protection Agency that off
 
 2. The Mapping Inequality project, led by the Digital Scholarship Lab at the University of Richmond, has digitized historical maps and data from the Home Owners' Loan Corporation (HOLC) redlining surveys. This files related to this dataset can be found under the /data folder.
 
-3. The Global Biodiversity Information Facility (GBIF) is the largest aggregator of biodiversity observations worldwide. The dataset includes information on species sightings, typically recording the location and date of each observation. Please note that due to the large file size, this dataset cannot be included in this repository. This file can be downloaded directly from the source, the link is provided below.
+3. The Global Biodiversity Information Facility (GBIF) is the largest aggregator of biodiversity observations worldwide. The dataset includes information on species sightings, typically recording the location and date of each observation. Please note that due to the large file size, this dataset cannot be included in this repository. The file can be downloaded directly from the source, the link is provided below.
 
 ## References
 
